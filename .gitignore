@@ -66,3 +66,4 @@ coverage/
 
 
 skin_vs_nonskin_Validator/
+frontend/.env
