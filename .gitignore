@@ -61,3 +61,8 @@ Thumbs.db
 
 coverage/
 .pytest_cache/
+
+.env
+
+
+skin_vs_nonskin_Validator/

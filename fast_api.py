@@ -7,15 +7,19 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError, field_validator
-
+from utils.skin_validator import load_skin_validator, validate_skin_from_bytes
 import base64
 from gradcam_utils import generate_gradcam_from_bytes
 from model import device, load_fusion_model
 from utils.class_names import class_names
 from utils.preprocessing import preprocess_metadata, val_transform
 
+from llm_utils import generate_llm_explanation
+
 
 MODEL_PATH = "models/fusion_model.pth"
+VALIDATOR_PATH  = "models/skin_validator.pth"
+
 CONFIDENCE_THRESHOLD = 55.0
 
 VALID_SEXES = {"male", "female"}
@@ -39,8 +43,7 @@ VALID_LOCALIZATIONS = {
 CANCER_CLASSES = {
     "Actinic Keratoses (akiec)",
     "Basal Cell Carcinoma (bcc)",
-    "Melanoma (mel)",
-}
+    "Melanoma (mel)",}
 
 
 SexValue = Literal["male", "female"]
@@ -87,21 +90,24 @@ class PredictionResponse(BaseModel):
     category: str
     is_low_confidence: bool
     message: str
-    gradcam_image: str
+    gradcam_image: str |None = None
     probabilities: Dict[str, float]
     top_predictions: List[TopPrediction]
     metadata: PredictionMetadata
     disclaimer: str
+    llm_explanation: str | None = None
 
 
 model = None
+validator_model = None
 
 
 # Loads the model once when the API starts instead of loading it on every request.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model
+    global model, validator_model
     model = load_fusion_model(MODEL_PATH, device)
+    validator_model = load_skin_validator(VALIDATOR_PATH, device)
     yield
 
 
@@ -156,8 +162,6 @@ def encode_gradcam_as_data_url(gradcam_image) -> str:
     )
 
 
-
-
 def get_prediction_metadata(
     age: Annotated[int, Form(...)],
     sex: Annotated[str, Form(...)],
@@ -197,6 +201,7 @@ def health_check():
         "status": "healthy",
 
         "model_loaded": model is not None,
+        "validator_loaded": validator_model is not None,
 
         "device": str(device)
     }
@@ -228,8 +233,27 @@ async def predict(
             status_code=400,
             detail="Uploaded image is empty.",
         )
+    
+    # ── Skin Validator Gate ──────────────────────────────────
+    is_skin, skin_confidence = validate_skin_from_bytes(
+        validator_model,
+        image_bytes,
+        device
+    )   
+
+    if not is_skin:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error"           : "Image rejected by skin validator.",
+                "reason"          : "Uploaded image does not appear to be a dermoscopic skin lesion image.",
+                "skin_confidence" : skin_confidence,
+                "suggestion"      : "Please upload a valid dermoscopic skin lesion image."
+            }
+        )   
 
     image_tensor = preprocess_uploaded_image(image_bytes).to(device)
+
     metadata_tensor = preprocess_metadata(
         metadata.age,
         metadata.sex,
@@ -275,20 +299,84 @@ async def predict(
         if prediction in CANCER_CLASSES
         else "Non-Cancerous Lesion"
     )
+    
+    # =========================================================
+    # OOD Handling
+    # =========================================================
 
+    if confidence < CONFIDENCE_THRESHOLD:
+    
+        prediction = "Unknown"
+    
+        lesion_category = "Unknown"
+    
+        top_predictions = []
+    
+        probabilities_dict = {}
+    
+    else:
+    
+        lesion_category = (
+            "Cancerous Lesion"
+            if prediction in CANCER_CLASSES
+            else "Non-Cancerous Lesion"
+        )
+    
+        probabilities_dict = {
+            class_name: round(
+                float(probability.item()) * 100,
+                2
+            )
+            for class_name, probability in zip(
+                class_names,
+                probabilities 
+            )
+        }
 
     # =========================================================
-    # Generate Grad-CAM
+    # Generate LLM Explanation
+    # Only for confident predictions
+    # =========================================================
+    # =========================================================
+    # OOD Handling
     # =========================================================
 
-    gradcam_image = generate_gradcam_from_bytes(
-        fusion_model=model,
-        image_bytes=image_bytes,
-        metadata=metadata_tensor,
-        device=device,
-    )
+    probabilities_dict = {
+    class_name: round(float(probability.item()) * 100, 2)
+    for class_name, probability in zip(class_names, probabilities) }
 
-    gradcam_data_url = encode_gradcam_as_data_url(gradcam_image)
+    llm_explanation = None
+    gradcam_data_url = None
+
+    if confidence >= CONFIDENCE_THRESHOLD:
+
+        # Generate GPT explanation
+        llm_explanation = generate_llm_explanation(
+            prediction=prediction,
+            confidence=confidence
+        )
+
+        # Generate GradCAM
+        gradcam_image = generate_gradcam_from_bytes(
+            fusion_model=model,
+            image_bytes=image_bytes,
+            metadata=metadata_tensor,
+            device=device,
+        )
+
+        gradcam_data_url = encode_gradcam_as_data_url(
+            gradcam_image
+        )
+
+    else:
+
+        # OOD / Low confidence
+        prediction = "Unknown"    
+        lesion_category = "Unknown"
+        top_predictions = []
+        probabilities_dict = {}
+
+
 
 
     return PredictionResponse(
@@ -296,6 +384,7 @@ async def predict(
         confidence=confidence,
         category=lesion_category,
         gradcam_image=gradcam_data_url,
+        llm_explanation=llm_explanation,
         is_low_confidence=confidence < CONFIDENCE_THRESHOLD,
         message=(
             "No clear skin lesion detected. Please upload a proper dermoscopic "
@@ -303,10 +392,7 @@ async def predict(
             if confidence < CONFIDENCE_THRESHOLD
             else "Prediction completed successfully."
         ),
-        probabilities={
-            class_name: round(float(probability.item()) * 100, 2)
-            for class_name, probability in zip(class_names, probabilities)
-        },
+        probabilities=probabilities_dict,
 
         top_predictions=top_predictions,
         

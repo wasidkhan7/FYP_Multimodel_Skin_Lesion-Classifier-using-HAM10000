@@ -30,11 +30,28 @@ const CANCER_CLASSES = [
 
 // Returns a readable error message from an Axios or JavaScript error.
 function getErrorMessage(error) {
-  if (error.response?.data?.detail) {
-    return typeof error.response.data.detail === "string"
-      ? error.response.data.detail
-      : JSON.stringify(error.response.data.detail);
+  const detail = error.response?.data?.detail;
+
+  if (detail) {
+    // ── Skin validator rejection ──
+    if (typeof detail === "object" && detail.error === "Image rejected by skin validator.") {
+      return `Invalid image — ${detail.reason} (Skin confidence: ${(detail.skin_confidence * 100).toFixed(1)}%)`;
+    }
+
+    // ── Plain string error ──
+    if (typeof detail === "string") {
+      return detail;
+    }
+
+    // ── Any other object error ──
+    if (typeof detail === "object" && detail.reason) {
+      return detail.reason;
+    }
+
+    return JSON.stringify(detail);
   }
+
+
 
   if (error.code === "ERR_NETWORK") {
     return "Cannot connect to the API. Start FastAPI on http://127.0.0.1:8000 first.";
@@ -139,10 +156,18 @@ function PredictionResult({ result }) {
             ))}
           </ol>
         </div>
-      )}
+      ) }
+
+      {result.llm_explanation && (
+  <div className="llm-explanation">
+    <h3>AI Explanation</h3>
+    <p>{result.llm_explanation}</p>
+  </div>)}
     </section>
   );
 }
+
+
 
 // Renders the uploaded image beside the Grad-CAM heatmap returned by FastAPI.
 function GradCamViewer({ originalImageUrl, gradcamImageUrl }) {
@@ -182,15 +207,16 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRejected, setIsRejected] = useState(false); 
 
   const canPredict = useMemo(() => image && age !== "", [image, age]);
 
   // Stores the selected image file and creates a local browser preview.
   function handleImageChange(event) {
     const selectedFile = event.target.files?.[0];
-
     setResult(null);
     setError("");
+    setIsRejected(false);  
     setImage(selectedFile || null);
     setPreviewUrl(selectedFile ? URL.createObjectURL(selectedFile) : "");
   }
@@ -207,6 +233,7 @@ function App() {
     setIsLoading(true);
     setError("");
     setResult(null);
+    setIsRejected(false); 
 
     try {
       const formData = createPredictionFormData({
@@ -223,6 +250,15 @@ function App() {
 
       setResult(response.data);
     } catch (requestError) {
+      // ── Check if it is a validator rejection specifically ──
+      const detail = requestError.response?.data?.detail;
+      if (
+        requestError.response?.status === 400 &&
+        typeof detail === "object" &&
+        detail.error === "Image rejected by skin validator."
+      ) {
+        setIsRejected(true);   // ← flag it separately
+      }
       setError(getErrorMessage(requestError));
     } finally {
       setIsLoading(false);
@@ -238,6 +274,7 @@ function App() {
     setLocalization("back");
     setResult(null);
     setError("");
+    setIsRejected(false);
   }
 
   return (
@@ -260,11 +297,17 @@ function App() {
                 onChange={handleImageChange}
               />
               {previewUrl ? (
-                <img src={previewUrl} alt="Selected lesion preview" />
+                <div className="preview-wrapper">
+                  <img src={previewUrl} alt="Selected lesion preview" />
+                  {isRejected && (
+                    <div className="rejected-badge">❌ Not a skin image</div>
+                  )}
+                </div>
               ) : (
                 <span>Choose dermoscopic image</span>
               )}
             </label>
+
           </section>
 
           <section className="form-panel">
@@ -314,6 +357,11 @@ function App() {
             </div>
 
             {error && <div className="notice error">{error}</div>}
+            {isRejected && (
+              <div className="notice error">
+                Image rejected by skin validator.
+              </div>
+            )}
           </section>
         </form>
 
@@ -337,3 +385,4 @@ function App() {
 }
 
 export default App;
+
