@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.git
+.gitignore
+FYP_Skin_Lesion.ipynb
+skin_validator.ipynb
+Results/
+skin_sample_testing/
+frontend/node_modules
+frontend/build
+*.venv
+.env

@@ -1,0 +1,26 @@
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+    # You have two apps (FastAPI backend, React frontend), so you need two images, run as two containers, talking to each other.
+    # docker-compose.yml is the file that says "build both of these and run them together."
+
+    # ports: "3000:80" means: "outside the container (your browser) uses port 3000, inside the container nginx uses port 80." You don't need to worry about the inside number — just remember you'll visit localhost:3000 like always.

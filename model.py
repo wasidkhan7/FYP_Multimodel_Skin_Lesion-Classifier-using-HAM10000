@@ -26,7 +26,7 @@ class FusionModel(nn.Module):
         # ==================================================
         # Image Branch (EfficientNetB0 Backbone)
         # ==================================================
-        self.image_model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
+        self.image_model = efficientnet_b0(weights=None)
 
         # Remove EfficientNet classifier
         self.image_feature_dim = (self.image_model.classifier[1].in_features)
