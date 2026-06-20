@@ -230,8 +230,10 @@ This validator improves robustness against irrelevant user uploads.
 
 Successful prediction:
 
+
 <img width="771" height="869" alt="image" src="https://github.com/user-attachments/assets/d46ae9f3-f915-4ffb-8b36-9edb5b01e568" />
 <img width="752" height="456" alt="image" src="https://github.com/user-attachments/assets/f08af480-a08e-4e45-b1eb-c8148edd7fb4" />
+
 
 
 
@@ -246,8 +248,13 @@ Successful prediction:
 }
 ```
 
+
+
 Rejected image:
 <img width="752" height="456" alt="image" src="https://github.com/user-attachments/assets/4b869ba0-907e-4d42-b609-1bb0beb84220" />
+
+
+
 
 
 ```json
@@ -259,9 +266,33 @@ Rejected image:
 }
 ```
 
+
+
 ---
 
+## Comparative Performance Analysis
+
+An extensive ablation study was conducted on the HAM10000 dataset to evaluate the effectiveness of different image feature extractors, metadata learning, and fusion strategies. The Metadata MLP trained solely on patient information (age, sex, and lesion localization) achieved a test accuracy of 45.64%, with a Macro F1-score of 0.2322 and a Weighted F1-score of 0.5183. These results demonstrate that metadata alone contains limited discriminatory information for accurate skin lesion classification and is heavily affected by class imbalance.
+
+Among the image-only models, EfficientNetB0 achieved the highest performance with a test accuracy of 88.52%, a Macro F1-score of 0.8292, and a Weighted F1-score of 0.8866. ResNet18 followed closely with an accuracy of 88.02%, while MobileNetV2 achieved 87.52%. Although the difference in accuracy appears small, EfficientNetB0 consistently produced the strongest F1-scores, indicating better overall class-wise discrimination and more balanced predictions across lesion categories.
+
+EfficientNetB0 outperformed the other architectures primarily due to its compound scaling methodology, which jointly scales network depth, width, and input resolution. This design enables the model to capture fine-grained lesion characteristics such as color variation, border irregularities, texture patterns, and structural features more effectively than conventional architectures. These characteristics are particularly important in dermoscopic image analysis where subtle visual differences separate benign and malignant lesions.
+
+To investigate whether patient metadata could improve classification performance, multiple multimodal fusion strategies were evaluated, including Simple Concatenation Fusion, Attention Fusion, and Gated Fusion. Contrary to expectations, none of the fusion approaches surpassed the image-only EfficientNetB0 baseline. The best fusion model, EfficientNetB0 with Gated Fusion, achieved a test accuracy of 88.12%, a Macro F1-score of 0.8227, and a Weighted F1-score of 0.8836, which remained slightly below the image-only EfficientNetB0 model. Similar trends were observed for ResNet18 and MobileNetV2 fusion variants, suggesting that the available metadata contributed limited additional information beyond what was already captured from the dermoscopic images.
+
+Among the fusion techniques, Gated Fusion consistently outperformed Attention Fusion and Simple Concatenation Fusion, indicating that adaptive feature weighting is more effective than direct feature merging. However, the performance gains were insufficient to exceed the strongest image-only baseline. Furthermore, the Hair Removal preprocessing experiment was not adopted in the final system because it reduced prediction confidence and introduced additional misclassifications, negatively affecting overall model reliability.
+
+Based on these findings, EfficientNetB0 was selected as the primary image backbone for the final system due to its superior classification performance, strong class-wise generalization, and computational efficiency. The study also highlights an important research observation: in the HAM10000 dataset, high-quality dermoscopic image features contribute significantly more to classification performance than the available demographic metadata, making image representation the dominant factor in model success.
+
+
+
+<img width="1235" height="565" alt="ablationtable" src="https://github.com/user-attachments/assets/95a75e6f-ff22-452e-80df-0971ce98d9d7" />
+
+
+
 ## Research Contributions
+
+
 
 This project extends traditional skin lesion classification by integrating:
 
