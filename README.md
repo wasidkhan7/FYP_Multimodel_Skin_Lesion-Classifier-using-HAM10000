@@ -1,6 +1,11 @@
 
 # Multimodal Skin Lesion Classification System using HAM10000
 
+## Live Demo
+
+Try the deployed app here: https://huggingface.co/spaces/Wasidkhan28/skin-lesion-classifier 
+
+
 ## Overview
 
 This project presents a complete end-to-end AI-powered Skin Lesion Classification System developed using Deep Learning, FastAPI, React.js, Explainable AI (Grad-CAM), Large Language Models (GPT-4o-mini), and Docker.
